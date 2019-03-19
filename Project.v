@@ -1,5 +1,15 @@
+/*TODO
+Add delay to enable.
+Make so the output w_display is drawn to the screen.
 
-module part3
+w_display;
+always @(posedge clock)
+	counter_x
+		counter_y
+			colour = w_display[32*x+y] : white ? black;
+		
+*/
+module project_drawing
 	(
 		CLOCK_50,						//	On Board 50 MHz
 		// Your inputs and outputs here
@@ -65,235 +75,214 @@ module part3
 		defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
 		defparam VGA.BACKGROUND_IMAGE = "black.mif";
 			
-	// Put your code here. Your code should produce signals x,y,colour and writeEn/plot
-	// for the VGA controller, in addition to any other functionality your design may require.
-
-    control c0(.clk(CLOCK_50), .resetn(resetn), .enable(SW[0]), .colour_in(SW[9:7]), .x_out(x), .y_out(y), .colour_out(colour), .plot(writeEn));
+		wire [767:0] display_and_buffer;
+		wire [511:0] w_display;
+		game_state gs(w_display, display_and_buffer, 256'h0, CLOCK_50, resetn, enable, 1'b0);
     
 endmodule
 
-module frame_counter(output out, input clk, input resetn, input enable);
+module datapath(resetn, clock, enable, x, y, colour)
 
-	reg [19:0] q;
+
+module main(display, display_and_buffer, CLOCK_50, resetn, enable, set_buffer,c0, c1, c2, c3, c4, c5, c6, c7);
+	input CLOCK_50, resetn, enable, set_buffer;
+	output  [511:0]display;
+	output [767:0] display_and_buffer;
 	
-
-    always @(posedge clk)
-	begin
-		if (!resetn)
-			q <= 20'd833334;
-		else if (enable == 1'b1)
-			begin
-				if (q == 20'd0)
-					q <= 20'd833334;
-				else
-					q <= q - 1'b1;
-			end
-	end
-	assign out = (q == 20'd0) ? 1 : 0;
+	output [18:0] c0, c1, c2, c3, c4, c5, c6, c7;
+	
+	
+	
+	// output of rectangle
+	//wire [255:0] w_rectangle;
+	//get_rectangle rect(CLOCK_50, 4'b0001, 4'b0110, 4'b0011, 4'b0110, w_rectangle);
+	wire [255:0] w_spawner;
+	wire w_set_buffer;
+	spawner sp(CLOCK_50, 1, resetn, w_spawner, w_set_buffer);
+	
+	// add_buffer= w_rectangle
+	game_state gs(w_display,display_and_buffer, w_spawner, CLOCK_50, resetn, enable, w_set_buffer);
+	assign display = w_display;
+	
+	// for displaying top 8 pixels of screen in model sim
+	///*
+	assign c0 = w_display[32*0+:18];
+	assign c1 = w_display[32*1+:18];
+	assign c2 = w_display[32*2+:18];
+	assign c3 = w_display[32*3+:18];
+	assign c4 = w_display[32*4+:18];
+	assign c5 = w_display[32*5+:18];
+	assign c6 = w_display[32*6+:18];
+	assign c7 = w_display[32*7+:18];
+	//*/
+	
+	wire[4:0] w_rand;
+	random rand(CLOCK_50, resetn, enable, w_rand);
+	
+	// for displaying rectangle in model sim
+	/*
+	assign c0 = w_rectangle[16*0+:16];
+	assign c1 = w_rectangle[16*1+:16];
+	assign c2 = w_rectangle[16*2+:16];
+	assign c3 = w_rectangle[16*3+:16];
+	assign c4 = w_rectangle[16*4+:16];
+	assign c5 = w_rectangle[16*5+:16];*/
+	
 endmodule
 
-module delay_counter(output out, input clk, input resetn, input enable);
-
-	reg [3:0] q;
+module random(clock, resetn, enable, out_value);
+	input clock, resetn, enable;
 	
-    always @(posedge clk)
-	begin
-		if (!resetn)
-			q <= 4'b1111;
-		else if (enable == 1'b1)
-			begin
-				if (q == 4'b0000)
-					q <= 4'b1111;
-				else
-					q <= q - 1'b1;
+	
+	reg [7:0] counter;
+	
+	reg [4:0] bit;
+	output reg [4:0] out_value;
+	
+	integer i;
+	always @(posedge clock) begin
+		if(~resetn) begin
+			counter <= 8'b00000000;
+			bit <= 5'b00000;
+			out_value <= 5'b00101; // arbitrarily picked
+		end
+		else if(enable) begin
+			bit <= counter[6:2];
+			for(i = 0; i < 16; i= i+1) begin
+				bit = ((out_value >> 0) ^ (out_value >> 2) ^ (out_value >> 3));
+				out_value = (out_value >> 1) | (bit << 4);
 			end
+			counter <= counter + 8'b00000001;
+		end
 	end
-	assign out = (q == 4'b0000) ? 1 : 0;
+
 endmodule
+
+/* Output a rectangle into 16x6 out_buffer*/
+module get_rectangle(clock, x, y, w, h, out_buffer);
+	input clock;
+	input [3:0] x, y, w, h;
+	output reg [255:0] out_buffer; // 16x16 output
 	
-
-module counter_x
-	(
-		input clk, resetn, enable,
-		input direction, 
-		output reg [7:0] x
-	);
-
-	always @(negedge clk)
-		begin
-			if (!resetn)
-				x <= 8'b00000000;
-			else if (enable) 
-				begin
-					if (direction == 1'b1)
-						x <= x + 1'b1;
-					else if (direction == 1'b0)
-						x <= x - 1'b1;
+	integer ix, iy;
+	always @ (posedge clock) begin
+		for (ix=0; ix<16; ix=ix+1) begin
+			for(iy = 0; iy < 16; iy = iy +1) begin
+				if(ix >= x && ix < x + w && iy >= y && iy < y + h) begin
+					out_buffer[ix*16 + iy] <= 1;
 				end
-		end
-endmodule
-
-module counter_y
-	(
-		input clk, resetn, enable,
-		input direction, 
-		output reg [6:0] y
-	);
-
-	always @(negedge clk)
-		begin
-			if (!resetn)
-				y <= 7'd60;
-			else if (enable) 
-				begin
-					if (direction == 1'b1)
-						y <= y + 1'b1;
-					else if (direction == 1'b0)
-						y <= y - 1'b1;
+				
+				else begin
+					out_buffer[ix*16 + iy] <= 0;
 				end
-		end
-endmodule
-					
-
-module vertical_register
-	(
-		input clk, resetn, 
-		input [6:0] y,
-		output reg direction
-	);
-	
-	always @(posedge clk)
-		begin
-			if (!resetn)
-				direction <= 1'b0;
-			else begin
-				if (y == 7'b0000000)
-					direction <= 1'b1;
-				else if (y == 7'd116)
-					direction <= 1'b0;
-				else
-					direction <= direction;
 			end
 		end
+	end
 endmodule
 
-module horizontal_register
-	(
-		input clk, resetn, 
-		input [7:0] x,
-		output reg direction
-	);
+/* Output a circle into 16x6 out_buffer*/
+module get_circle(clock, x, y, r, out_buffer);
+	input clock;
+	input [3:0] x, y, r;
+	output reg [255:0] out_buffer; // 16x16 output
 	
-	always @(posedge clk)
-		begin
-			if (!resetn)
-				direction <= 1'b1;
-			else begin
-				if (x == 8'b00000000)
-					direction <= 1'b1;
-				else if (x == 8'd156)
-					direction <= 1'b0;
-				else
-					direction <= direction;
+	integer ix, iy;
+	always @ (posedge clock) begin
+		for (ix=0; ix<16; ix=ix+1) begin
+			for(iy = 0; iy < 16; iy = iy +1) begin
+				if((ix-x)*(ix-x) + (iy-y)*(iy-y) <= r*r) begin
+					out_buffer[ix*16 + iy] <= 1;
+				end
+				else begin
+					out_buffer[ix*16 + iy] <= 0;
+				end
 			end
 		end
-endmodule
-
-module datapath_part2
-	(
-		input clk,
-		input resetn, enable,
-		input [2:0] colour_in,
-		input [7:0] x_in,
-		input [6:0] y_in,
-		output [7:0] x_coordinate,
-		output [6:0] y_coordinate,
-		output reg [2:0] colour_out
-	);
-	
-	reg [5:0] counter;
-	wire [1:0] count_x;
-	wire [1:0] count_y;
-
-	always @(posedge clk) begin
-		if (!resetn) begin
-			colour_out <= 3'b0;
-			counter <= 6'b0000;
-			end
-		else begin 
-			colour_out <= colour_in;
-			if (enable)
-				counter <= counter + 1'b1;
-			end
 	end
 	
-	assign count_x = counter [2:0];
-	assign count_y = counter [5:3];
-	
-	assign x_coordinate = x_in + count_x;
-	assign y_coordinate = y_in + count_y;
-	
-endmodule
-
-module control
-	(
-		input clk, resetn, enable,
-		input [2:0] colour_in,
-		output [7:0] x_out,
-		output [6:0] y_out,
-		output [2:0] colour_out,
-		output plot
-	);
-
-	wire delay_out;
-	wire frame_out;
-	wire x_direction, y_direction;
-	wire[7:0] x_in;
-	wire[6:0] y_in;
-	wire[2:0] colour;
-
-	assign colour = delay_out ? 3'b000 : colour_in;
-
-	frame_counter c0(frame_out, clk, resetn, enable);
-	delay_counter c1(delay_out, clk, resetn, frame_out);
-	
-	horizontal_register r0(clk ,resetn, x_in, x_direction);
-	vertical_register r1(clk, resetn, y_in, y_direction);
-
-	counter_x c2(clk, resetn, delay_out, x_direction, x_in);
-	counter_y c3(clk, resetn, delay_out, y_direction, y_in);
-
-	datapath_part2 d0(clk, resetn, enable, colour, x_in, y_in, x_out, y_out, colour_out);
-
-	assign plot = resetn;
-endmodule
-
-module asteroid_control //Moves vertically down, does not move sideways
-	(
-		input clk, resetn, enable,
-		input [2:0] colour_in,
-		input [7:0] x_in
-		output [7:0] x_out,
-		output [6:0] y_out,
-		output [2:0] colour_out,
-		output plot
-	);
-
-	wire delay_out;
-	wire frame_out;
-	wire[6:0] y_in;
-	wire[2:0] colour;
-
-	assign colour = delay_out ? 3'b000 : colour_in;
-
-	frame_counter c0(frame_out, clk, resetn, enable);
-	delay_counter c1(delay_out, clk, resetn, frame_out);
-
-	counter_y c3(clk, resetn, delay_out, 1'b1, y_in);
-
-	datapath_part2 d0(clk, resetn, enable, colour, x_in, y_in, x_out, y_out, colour_out);
-
-	assign plot = resetn;
 endmodule
 
 
+/* If enabled, will regularly output a rectangle into out_buffer, and set set_buffer to 1 for 1 clock cycle*/
+module spawner(clock, enable, resetn, /*delay,*/ out_buffer, set_buffer);
+	input clock, enable, resetn;
+	//input [7:0] delay;
+	output reg [255:0] out_buffer; 
+	output reg set_buffer; 
+	
+	reg [7:0] counter;
+	
+	wire [255:0] w_out_buffer;
+   //get_rectangle gs(clock, 4'b0001, 4'b0110, 4'b0011, 4'b0110, w_out_buffer);
+	
+	wire [4:0] w_random;
+	random rand(clock, resetn, enable, w_random);
+	
+	//get_circle gs(clock, 4'b0100, 4'b0110, 4'b0011, w_out_buffer);
+	get_circle gs(clock, w_random[3:0], 4'b0110, 4'b0011, w_out_buffer);
+	
+	always @ (posedge clock) begin
+		if(~resetn) begin 
+			counter <= 8'b00000000;
+			out_buffer <= 256'h00;
+			set_buffer <= 1'b0;
+		end
+		else if(enable) begin
+			counter <= counter + 8'b00000001;
+			if(counter >= 8'b00010000)begin
+				counter <= 8'b00000000;
+				out_buffer <= w_out_buffer;
+				set_buffer <= 1'b1;
+			end
+			else begin
+				set_buffer <= 1'b0;
+				out_buffer <= 256'h00;
+			end
+			
+		end
+	end
+	
+endmodule
+
+
+
+module game_state(display, display_and_buffer, add_buffer, clock, resetn, enable, set_buffer);
+	
+	input resetn, clock, enable, set_buffer;
+	input [255:0] add_buffer;
+	
+	output reg [511:0] display; // 16 x 32 display
+	output reg [767:0] display_and_buffer; // 16x48: 16 x 32 display + 16 x 16 buffer on top
+	
+	integer ix;
+	integer iy;
+	always @ (posedge clock) begin
+        if (~resetn) begin
+				// Reset the display_and_buffer. For now, puts a line of 1's at the top
+				for (ix=0; ix<16; ix=ix+1) begin
+					display_and_buffer[ix*48] <= 1'b1;
+					display_and_buffer[ix * 48 + 1 +: 47] <= 47'h00000000;
+				end
+        end
+		  else if(set_buffer) begin
+				// set the 16x16 buffer on the top
+				for(ix = 0; ix < 16; ix = ix+1) begin
+					display_and_buffer[ix*48 +: 16] <= add_buffer[ix*16 +: 16];
+				end
+		  end
+		  
+		  // shift display down 1 row
+        else if(enable) begin
+				for (ix=0; ix<16; ix=ix+1) begin
+					display_and_buffer[ix * 48 +: 48] <= {display_and_buffer[ix*48 +:47], 1'b0};
+				end
+        end
+		  
+		  // set the output for just the displayed part of the display_and_buffer
+		  for (ix=0; ix<16; ix=ix+1) begin
+			 display[ix*32 +:32] <= display_and_buffer[ix * 48 + 16 +: 32];
+		  end
+		  
+    end
+	 
+endmodule
