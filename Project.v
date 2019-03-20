@@ -40,12 +40,10 @@ module phase1
 	wire enable;
 	assign enable = SW[0];
 	
-	// Create the colour, x, y and writeEn wires that are inputs to the controller.
+	// Create the colour, x, and y wires that are inputs to the controller.
 	wire [2:0] colour;
 	wire [3:0] x;
 	wire [4:0] y;
-	wire writeEn;
-	assign writeEn = enable;
 
 	// Create an Instance of a VGA controller - there can be only one!
 	// Define the number of colours as well as the initial background
@@ -56,7 +54,7 @@ module phase1
 			.colour(colour),
 			.x(x),
 			.y(y),
-			.plot(writeEn),
+			.plot(enable),
 			/* Signals for the DAC to drive the monitor. */
 			.VGA_R(VGA_R),
 			.VGA_G(VGA_G),
@@ -103,8 +101,8 @@ module datapath(resetn, clock, enable, x, y, colour);
 	counter_y cy(clock, resetn, enable, y);
 	counter_x cx(clock, resetn, counter_x_enable, x);
 
-	spawner sp(CLOCK_50, enable, resetn, w_spawner, w_set_buffer); //Set enable == delay_out?
-	game_state gs(w_display, display_and_buffer, w_spanner, clock, resetn, enable, w_set_buffer); //Set enable = delay_out?
+	spawner sp(CLOCK_50, delay_out, resetn, w_spawner, w_set_buffer); //Set enable == delay_out?
+	game_state gs(w_display, display_and_buffer, w_spanner, clock, resetn, delay_out, w_set_buffer); //Set enable = delay_out?
 
 endmodule
 
