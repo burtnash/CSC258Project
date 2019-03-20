@@ -1,15 +1,9 @@
-/*TODO
-Add delay to enable.
-Make so the output w_display is drawn to the screen.
+`include "vga_adapter/vga_adapter.v"
+`include "vga_adapter/vga_address_translator.v"
+`include "vga_adapter/vga_controller.v"
+`include "vga_adapter/vga_pll.v"
 
-w_display;
-always @(posedge clock)
-	counter_x
-		counter_y
-			colour = w_display[32*x+y] : white ? black;
-		
-*/
-module project_drawing
+module phase1
 	(
 		CLOCK_50,						//	On Board 50 MHz
 		// Your inputs and outputs here
