@@ -43,13 +43,15 @@ module project_drawing
 	
 	wire resetn;
 	assign resetn = KEY[0];
+	wire enable;
+	assign enable = SW[0];
 	
 	// Create the colour, x, y and writeEn wires that are inputs to the controller.
 	wire [2:0] colour;
-	wire [7:0] x;
-	wire [6:0] y;
+	wire [3:0] x;
+	wire [4:0] y;
 	wire writeEn;
-	wire ld_x, ld_y;
+	assign writeEn = enable;
 
 	// Create an Instance of a VGA controller - there can be only one!
 	// Define the number of colours as well as the initial background
@@ -70,18 +72,116 @@ module project_drawing
 			.VGA_BLANK(VGA_BLANK_N),
 			.VGA_SYNC(VGA_SYNC_N),
 			.VGA_CLK(VGA_CLK));
-		defparam VGA.RESOLUTION = "160x120";
+		defparam VGA.RESOLUTION = "16x32";
 		defparam VGA.MONOCHROME = "FALSE";
 		defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
 		defparam VGA.BACKGROUND_IMAGE = "black.mif";
 			
-		wire [767:0] display_and_buffer;
-		wire [511:0] w_display;
-		game_state gs(w_display, display_and_buffer, 256'h0, CLOCK_50, resetn, enable, 1'b0);
+	datapath d0(resetn, CLOCK_50, enable, x, y, colour);
     
 endmodule
 
-module datapath(resetn, clock, enable, x, y, colour)
+module datapath(resetn, clock, enable, x, y, colour);
+	input resetn;
+	input clock;
+	input enable;
+	output [3:0] x;
+	output [4:0] y;
+	output reg [2:0] colour;
+	
+	reg counter_x_enable;
+	wire frame_out;
+	wire delay_out;
+	wire [767:0] display_and_buffer;
+	wire [511:0] w_display;
+	wire [255:0] w_spawner;
+	wire w_set_buffer;
+
+	always @(posedge clock)
+	begin
+		assign counter_x_enable = (y == 5'b11111) ? 1 : 0;
+		assign colour = (w_display[32*x+y] == 1'b1) ? 3'b111 : 3'b000;
+	end
+
+	frame_counter c0(frame_out, clock, resetn, enable);
+	delay_counter c1(delay_out, clock, resetn, frame_out);
+
+	counter_y cy(clock, resetn, enable, y);
+	counter_x cx(clock, resetn, counter_x_enable, x);
+
+	spawner sp(CLOCK_50, enable, resetn, w_spawner, w_set_buffer); //Set enable == delay_out?
+	game_state gs(w_display, display_and_buffer, w_spanner, clock, resetn, enable, w_set_buffer); //Set enable = delay_out?
+
+endmodule
+
+module frame_counter(output out, input clk, input resetn, input enable);
+
+	reg [19:0] q;
+	
+
+    always @(posedge clk)
+	begin
+		if (!resetn)
+			q <= 20'd833334;
+		else if (enable == 1'b1)
+			begin
+				if (q == 20'd0)
+					q <= 20'd833334;
+				else
+					q <= q - 1'b1;
+			end
+	end
+	assign out = (q == 20'd0) ? 1 : 0;
+endmodule
+
+module delay_counter(output out, input clk, input resetn, input enable);
+
+	reg [3:0] q;
+	
+    always @(posedge clk)
+	begin
+		if (!resetn)
+			q <= 4'b1111;
+		else if (enable == 1'b1)
+			begin
+				if (q == 4'b0000)
+					q <= 4'b1111;
+				else
+					q <= q - 1'b1;
+			end
+	end
+	assign out = (q == 4'b0000) ? 1 : 0;
+endmodule
+
+module counter_x
+	(
+		input clock, resetn, enable,
+		output reg [3:0] x
+	);
+
+	always @(posedge clock)
+		begin
+			if (!resetn)
+				x <= 4'b0000;
+			else if (enable) 
+				x <= x + 1'b1;
+		end
+endmodule
+
+module counter_y
+	(
+		input clock, resetn, enable,
+		output reg [4:0] y
+	);
+
+	always @(posedge clock)
+		begin
+			if (!resetn)
+				y <= 5'b00000;
+			else if (enable) 
+				y <= y + 1'b1;
+		end
+endmodule
 
 
 module main(display, display_and_buffer, CLOCK_50, resetn, enable, set_buffer,c0, c1, c2, c3, c4, c5, c6, c7);
@@ -106,14 +206,14 @@ module main(display, display_and_buffer, CLOCK_50, resetn, enable, set_buffer,c0
 	
 	// for displaying top 8 pixels of screen in model sim
 	///*
-	assign c0 = w_display[32*0+:18];
-	assign c1 = w_display[32*1+:18];
-	assign c2 = w_display[32*2+:18];
-	assign c3 = w_display[32*3+:18];
-	assign c4 = w_display[32*4+:18];
-	assign c5 = w_display[32*5+:18];
-	assign c6 = w_display[32*6+:18];
-	assign c7 = w_display[32*7+:18];
+	//assign c0 = w_display[32*0+:18];
+	//assign c1 = w_display[32*1+:18];
+	//assign c2 = w_display[32*2+:18];
+	//assign c3 = w_display[32*3+:18];
+	//assign c4 = w_display[32*4+:18];
+	//assign c5 = w_display[32*5+:18];
+	//assign c6 = w_display[32*6+:18];
+	//assign c7 = w_display[32*7+:18];
 	//*/
 	
 	wire[4:0] w_rand;
@@ -286,3 +386,6 @@ module game_state(display, display_and_buffer, add_buffer, clock, resetn, enable
     end
 	 
 endmodule
+
+
+
