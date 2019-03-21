@@ -39,11 +39,15 @@ module phase1
 	assign resetn = KEY[0];
 	wire enable;
 	assign enable = SW[0];
+	wire state_clock;
+	assign state_clock= ~KEY[1];
 	
 	// Create the colour, x, and y wires that are inputs to the controller.
 	wire [2:0] colour;
-	wire [3:0] x;
-	wire [4:0] y;
+	wire [4:0] x;
+	wire [5:0] y;
+	wire [2:0] blue;
+	assign blue = 3'b001;
 
 	// Create an Instance of a VGA controller - there can be only one!
 	// Define the number of colours as well as the initial background
@@ -64,21 +68,22 @@ module phase1
 			.VGA_BLANK(VGA_BLANK_N),
 			.VGA_SYNC(VGA_SYNC_N),
 			.VGA_CLK(VGA_CLK));
-		defparam VGA.RESOLUTION = "16x32";
+		defparam VGA.RESOLUTION = "160x120";
 		defparam VGA.MONOCHROME = "FALSE";
 		defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
 		defparam VGA.BACKGROUND_IMAGE = "black.mif";
 			
-	datapath d0(resetn, CLOCK_50, enable, x, y, colour);
+	datapath d0(resetn, CLOCK_50, enable, x, y, colour, state_clock);
     
 endmodule
 
-module datapath(resetn, clock, enable, x, y, colour);
+module datapath(resetn, clock, enable, x, y, colour, stateclock);
 	input resetn;
 	input clock;
 	input enable;
-	output [3:0] x;
-	output [4:0] y;
+		input stateclock;
+	output [4:0] x;
+	output [5:0] y;
 	output reg [2:0] colour;
 	
 	reg counter_x_enable;
@@ -88,11 +93,12 @@ module datapath(resetn, clock, enable, x, y, colour);
 	wire [511:0] w_display;
 	wire [255:0] w_spawner;
 	wire w_set_buffer;
+	wire [2047:0] display;
 
 	always @(posedge clock)
 	begin
-		assign counter_x_enable = (y == 5'b11111) ? 1 : 0;
-		assign colour = (w_display[32*x+y] == 1'b1) ? 3'b111 : 3'b000;
+		counter_x_enable <= (y == 5'b11111) ? 1'b1 : 1'b0;
+		colour <= (display[64 * x + y] == 1'b1) ? 3'b010 : 3'b001;
 	end
 
 	frame_counter c0(frame_out, clock, resetn, enable);
@@ -100,10 +106,31 @@ module datapath(resetn, clock, enable, x, y, colour);
 
 	counter_y cy(clock, resetn, enable, y);
 	counter_x cx(clock, resetn, counter_x_enable, x);
+	
+	convert512to2048 converter(w_display, display);
 
-	spawner sp(CLOCK_50, delay_out, resetn, w_spawner, w_set_buffer); //Set enable == delay_out?
-	game_state gs(w_display, display_and_buffer, w_spanner, clock, resetn, delay_out, w_set_buffer); //Set enable = delay_out?
+	//assign w_display = 256'd666666;
+	spawner sp(delay_out, enable, resetn, w_spawner, w_set_buffer); //Set enable == delay_out?
+	//assign w_spawner = 256'hFF;
+	//assign w_set_buffer = delay_out;
+	game_state gs(w_display, display_and_buffer, w_spawner, delay_out, resetn, enable, w_set_buffer); //Set enable = delay_out?
 
+endmodule
+
+module convert512to2048(input [511:0] in, output reg [2047:0] out);
+	integer x, y;
+	always @(*) begin
+		for (x=0; x<16; x=x+1) begin
+			for(y = 0; y < 32; y = y +1) begin
+				out[2*(64*x+y)] <= in[32*x+y];
+				out[2*(64*x+y)+1] <= in[32*x+y];
+				out[2*(64*x+y)+64] <= in[32*x+y];
+				out[2*(64*x+y)+65] <= in[32*x+y];
+				
+			end
+		end
+	end
+	
 endmodule
 
 module frame_counter(output out, input clk, input resetn, input enable);
@@ -148,13 +175,13 @@ endmodule
 module counter_x
 	(
 		input clock, resetn, enable,
-		output reg [3:0] x
+		output reg [4:0] x
 	);
 
 	always @(posedge clock)
 		begin
 			if (!resetn)
-				x <= 4'b0000;
+				x <= 5'b00000;
 			else if (enable) 
 				x <= x + 1'b1;
 		end
@@ -163,13 +190,13 @@ endmodule
 module counter_y
 	(
 		input clock, resetn, enable,
-		output reg [4:0] y
+		output reg [6:0] y
 	);
 
 	always @(posedge clock)
 		begin
 			if (!resetn)
-				y <= 5'b00000;
+				y <= 6'b000000;
 			else if (enable) 
 				y <= y + 1'b1;
 		end
@@ -241,8 +268,8 @@ module random(clock, resetn, enable, out_value);
 		else if(enable) begin
 			bit <= counter[6:2];
 			for(i = 0; i < 16; i= i+1) begin
-				bit = ((out_value >> 0) ^ (out_value >> 2) ^ (out_value >> 3));
-				out_value = (out_value >> 1) | (bit << 4);
+				bit <= ((out_value >> 0) ^ (out_value >> 2) ^ (out_value >> 3));
+				out_value <= (out_value >> 1) | (bit << 4);
 			end
 			counter <= counter + 8'b00000001;
 		end
@@ -305,13 +332,13 @@ module spawner(clock, enable, resetn, /*delay,*/ out_buffer, set_buffer);
 	reg [7:0] counter;
 	
 	wire [255:0] w_out_buffer;
-   //get_rectangle gs(clock, 4'b0001, 4'b0110, 4'b0011, 4'b0110, w_out_buffer);
+   get_rectangle gs(clock, 4'b0001, 4'b0110, 4'b0011, 4'b0110, w_out_buffer);
 	
 	wire [4:0] w_random;
 	random rand(clock, resetn, enable, w_random);
 	
 	//get_circle gs(clock, 4'b0100, 4'b0110, 4'b0011, w_out_buffer);
-	get_circle gs(clock, w_random[3:0], 4'b0110, 4'b0011, w_out_buffer);
+	//get_circle gs(clock, w_random[3:0], 4'b0110, 4'b0011, w_out_buffer);
 	
 	always @ (posedge clock) begin
 		if(~resetn) begin 
@@ -320,9 +347,12 @@ module spawner(clock, enable, resetn, /*delay,*/ out_buffer, set_buffer);
 			set_buffer <= 1'b0;
 		end
 		else if(enable) begin
+			
+		
 			counter <= counter + 8'b00000001;
 			if(counter >= 8'b00010000)begin
 				counter <= 8'b00000000;
+				//out_buffer <= 256'hFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
 				out_buffer <= w_out_buffer;
 				set_buffer <= 1'b1;
 			end
