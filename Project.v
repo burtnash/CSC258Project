@@ -109,11 +109,9 @@ module datapath(resetn, clock, enable, x, y, colour, stateclock);
 	
 	convert512to2048 converter(w_display, display);
 
-	//assign w_display = 256'd666666;
-	spawner sp(delay_out, enable, resetn, w_spawner, w_set_buffer); //Set enable == delay_out?
-	//assign w_spawner = 256'hFF;
-	//assign w_set_buffer = delay_out;
-	game_state gs(w_display, display_and_buffer, w_spawner, delay_out, resetn, enable, w_set_buffer); //Set enable = delay_out?
+
+	spawner sp(delay_out, enable, resetn, w_spawner, w_set_buffer);
+	game_state gs(w_display, display_and_buffer, w_spawner, delay_out, resetn, enable, w_set_buffer); 
 
 endmodule
 
@@ -130,7 +128,52 @@ module convert512to2048(input [511:0] in, output reg [2047:0] out);
 			end
 		end
 	end
-	
+endmodule
+
+module convert512to4068(input [511:0] in, output reg [4067:0] out);
+	integer x, y;
+	always @(*) begin
+		for (x=0; x<16; x=x+1) begin
+			for(y = 0; y < 32; y = y +1) begin
+				out[3*(96*x+y)] <= in[32*x+y];
+				out[3*(96*x+y)+1] <= in[32*x+y];
+				out[3*(96*x+y)+2] <= in[32*x+y];
+				out[3*(96*x+y)+96] <= in[32*x+y];
+				out[3*(96*x+y)+97] <= in[32*x+y];
+				out[3*(96*x+y)+98] <= in[32*x+y];
+				out[3*(96*x+y)+192] <= in[32*x+y];
+				out[3*(96*x+y)+193] <= in[32*x+y];
+				out[3*(96*x+y)+194] <= in[32*x+y];			
+			end
+		end
+	end	
+endmodule
+
+module movement_control (input clock, input resetn, input enable, input left, input right, output reg [3:0] position);
+	always @(posedge clk)
+	begin
+		if (!resetn)
+			position <= 4'b0100;
+		else if (enable)
+			begin
+				if (left && position > 4'b0001)
+					position <= position - 1'b1;
+				else if (right && position < 4'b1110)
+					position <= position + 1'b1;
+				else
+					position <= position;
+			end
+	end
+endmodule
+
+module display_movement (input [511:0] in, input [3:0] player, output reg [511:0] out);
+	always @(*) begin
+		out <= in;
+		out[32*player+31] <= 1'b1;
+		out[32*player-1] <= 1'b1;
+		out[32*player+30] <= 1'b1;
+		out[32*player+63] <= 1'b1;
+	end
 endmodule
 
 module frame_counter(output out, input clk, input resetn, input enable);
