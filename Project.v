@@ -39,15 +39,14 @@ module phase1
 	assign resetn = KEY[0];
 	wire enable;
 	assign enable = SW[0];
-	wire state_clock;
-	assign state_clock= ~KEY[1];
+	wire left, right;
+	assign left = ~KEY[1];
+	assign right = ~KEY[2];
 	
 	// Create the colour, x, and y wires that are inputs to the controller.
 	wire [2:0] colour;
-	wire [4:0] x;
-	wire [5:0] y;
-	wire [2:0] blue;
-	assign blue = 3'b001;
+	wire [5:0] x;
+	wire [6:0] y;
 
 	// Create an Instance of a VGA controller - there can be only one!
 	// Define the number of colours as well as the initial background
@@ -73,32 +72,34 @@ module phase1
 		defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
 		defparam VGA.BACKGROUND_IMAGE = "black.mif";
 			
-	datapath d0(resetn, CLOCK_50, enable, x, y, colour, state_clock);
+	datapath d0(resetn, CLOCK_50, enable, left, right, x, y, colour);
     
 endmodule
 
-module datapath(resetn, clock, enable, x, y, colour, stateclock);
+module datapath(resetn, clock, enable, left, right, x, y, colour);
 	input resetn;
 	input clock;
 	input enable;
-		input stateclock;
-	output [4:0] x;
-	output [5:0] y;
+	input left, right;
+	output [5:0] x;
+	output [6:0] y;
 	output reg [2:0] colour;
 	
 	reg counter_x_enable;
+	wire [3:0] player_location;
 	wire frame_out;
 	wire delay_out;
 	wire [767:0] display_and_buffer;
 	wire [511:0] w_display;
+	wire [511:0] player_display;
 	wire [255:0] w_spawner;
 	wire w_set_buffer;
-	wire [2047:0] display;
+	wire [4067:0] display;
 
 	always @(posedge clock)
 	begin
-		counter_x_enable <= (y == 5'b11111) ? 1'b1 : 1'b0;
-		colour <= (display[64 * x + y] == 1'b1) ? 3'b010 : 3'b001;
+		counter_x_enable <= (y == 6'b111111) ? 1'b1 : 1'b0;
+		colour <= (display[96 * x + y] == 1'b1) ? 3'b000 : 3'b001;
 	end
 
 	frame_counter c0(frame_out, clock, resetn, enable);
@@ -107,8 +108,10 @@ module datapath(resetn, clock, enable, x, y, colour, stateclock);
 	counter_y cy(clock, resetn, enable, y);
 	counter_x cx(clock, resetn, counter_x_enable, x);
 	
-	convert512to2048 converter(w_display, display);
+	convert512to4068 converter(player_display, display);
 
+	module movement_control(clock, resetn, enable, left, right, player_location);
+	module display_movement(clock, w_display, player_location, player_display);
 
 	spawner sp(delay_out, enable, resetn, w_spawner, w_set_buffer);
 	game_state gs(w_display, display_and_buffer, w_spawner, delay_out, resetn, enable, w_set_buffer); 
@@ -119,12 +122,11 @@ module convert512to2048(input [511:0] in, output reg [2047:0] out);
 	integer x, y;
 	always @(*) begin
 		for (x=0; x<16; x=x+1) begin
-			for(y = 0; y < 32; y = y +1) begin
+			for (y=0; y<32; y=y+1) begin
 				out[2*(64*x+y)] <= in[32*x+y];
 				out[2*(64*x+y)+1] <= in[32*x+y];
 				out[2*(64*x+y)+64] <= in[32*x+y];
 				out[2*(64*x+y)+65] <= in[32*x+y];
-				
 			end
 		end
 	end
@@ -166,8 +168,8 @@ module movement_control (input clock, input resetn, input enable, input left, in
 	end
 endmodule
 
-module display_movement (input [511:0] in, input [3:0] player, output reg [511:0] out);
-	always @(*) begin
+module display_movement (input clock, input [511:0] in, input [3:0] player, output reg [511:0] out);
+	always @(posedge clock) begin
 		out <= in;
 		out[32*player+31] <= 1'b1;
 		out[32*player-1] <= 1'b1;
@@ -218,13 +220,13 @@ endmodule
 module counter_x
 	(
 		input clock, resetn, enable,
-		output reg [4:0] x
+		output reg [5:0] x
 	);
 
 	always @(posedge clock)
 		begin
 			if (!resetn)
-				x <= 5'b00000;
+				x <= 6'b000000;
 			else if (enable) 
 				x <= x + 1'b1;
 		end
@@ -239,7 +241,7 @@ module counter_y
 	always @(posedge clock)
 		begin
 			if (!resetn)
-				y <= 6'b000000;
+				y <= 7'b0000000;
 			else if (enable) 
 				y <= y + 1'b1;
 		end
