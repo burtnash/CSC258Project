@@ -188,6 +188,21 @@ module display_movement (input clock, input [511:0] in, input [3:0] player, outp
 	end
 endmodule
 
+module collision_detect (input clock, input [511:0] in, input [3:0] player, output reg collision);
+	always @(posedge clock)
+		if (collision == 1'b0)
+		begin
+			if (out[32*player+31] == 1'b1)
+				collision <= 1'b1;
+			if (out[32*player-1] == 1'b1)
+				collision <= 1'b1;
+			if (out[32*player+30] == 1'b1)
+				collision <= 1'b1;
+			if (out[32*player+63] == 1'b1)
+				collision <= 1'b1;
+		end
+endmodule
+
 module frame_counter(output out, input clk, input resetn, input enable);
 
 	reg [19:0] q;
