@@ -151,6 +151,7 @@ module convert512to4068(input [511:0] in, output reg [4067:0] out);
 	end	
 endmodule
 
+/* Translates left and right into register storing position 1-14 */
 module movement_control (input clock, input resetn, input enable, input left, input right, output reg [3:0] position);
 	always @(posedge clk)
 	begin
@@ -168,13 +169,22 @@ module movement_control (input clock, input resetn, input enable, input left, in
 	end
 endmodule
 
+/* Displays player on output screen based on input screen*/
 module display_movement (input clock, input [511:0] in, input [3:0] player, output reg [511:0] out);
 	always @(posedge clock) begin
 		out <= in;
-		out[32*player+31] <= 1'b1;
+		//Draws Ship
+		out[32*player+31] <= 1'b1; //Center of ship
 		out[32*player-1] <= 1'b1;
 		out[32*player+30] <= 1'b1;
 		out[32*player+63] <= 1'b1;
+		//Draws whitespace around ship
+		out[32*player-2] <= 1'b0;
+		out[32*player+62] <= 1'b0;
+		if (player > 4'b0001)
+			out[32*player-33] <= 1'b0;
+		if (player < 4'b1110)
+			out[32*player+95] <= 1'b0;
 	end
 endmodule
 
