@@ -3,7 +3,7 @@
 `include "vga_adapter/vga_controller.v"
 `include "vga_adapter/vga_pll.v"
 
-module phase1
+module project
 	(
 		CLOCK_50,						//	On Board 50 MHz
 		// Your inputs and outputs here
@@ -29,12 +29,12 @@ module phase1
 	input			CLOCK_50;				//	50 MHz
 	input   [9:0]   SW;
 	input   [3:0]   KEY;
-	input [6:0] HEX0;
-	input [6:0] HEX1;
-	input [6:0] HEX2;
-	input [6:0] HEX3;
-	input [6:0] HEX4;
-	input [6:0] HEX5;
+	output [6:0] HEX0;
+	output [6:0] HEX1;
+	output [6:0] HEX2;
+	output [6:0] HEX3;
+	output [6:0] HEX4;
+	output [6:0] HEX5;
 
 	// Declare your inputs and outputs here
 	// Do not change the following outputs
@@ -87,16 +87,16 @@ module phase1
 			
 	datapath d0(resetn, CLOCK_50, enable, left, right, x, y, colour, score);
 	seven_segment ss0(score[3:0], HEX0[6:0]);
-	seven_segment ss0(score[7:4], HEX1[6:0]);
-	seven_segment ss0(score[11:8], HEX2[6:0]);
-	seven_segment ss0(score[15:12], HEX3[6:0]);
-	seven_segment ss0(score[19:16], HEX4[6:0]);
-	seven_segment ss0(score[23:20], HEX5[6:0]);
+	seven_segment ss1(score[7:4], HEX1[6:0]);
+	seven_segment ss2(score[11:8], HEX2[6:0]);
+	seven_segment ss3(score[15:12], HEX3[6:0]);
+	seven_segment ss4(score[19:16], HEX4[6:0]);
+	seven_segment ss5(score[23:20], HEX5[6:0]);
     
 endmodule
 
 module datapath(resetin, clock, enable, left, right, x, y, colour, score);
-	input resetn;
+	input resetin;
 	input clock;
 	input enable;
 	input left, right;
@@ -121,7 +121,7 @@ module datapath(resetin, clock, enable, left, right, x, y, colour, score);
 	always @(posedge clock)
 	begin
 		counter_x_enable <= (y == 6'b111111) ? 1'b1 : 1'b0;
-		colour <= (display[64 * x + y] == 1'b1) ? 3'b000 : 3'b001;
+		colour <= (display[64 * x + y] == 1'b1) ? 3'b111 : 3'b001;
 	end
 
 	frame_counter c0(frame_out, clock, resetn, enable);
@@ -133,9 +133,9 @@ module datapath(resetin, clock, enable, left, right, x, y, colour, score);
 	convert512to2048 converter(player_display, display);
 
 	module movement_control(delay_out, resetn, enable, left, right, player_location);
-	module display_movement(clock, w_display, player_location, player_display);
+	module display_movement(clock, resetn, w_display, player_location, player_display, collision);
 
-	collision_detect cd(clock, w_display, player_location, collision);
+	// collision_detect cd(clock, w_display, player_location, collision);
 	score_tracker st(clock, resetn, delay_out, score);
 
 	spawner sp(delay_out, enable, resetn, w_spawner, w_set_buffer);
@@ -178,7 +178,7 @@ module movement_control (input clock, input resetn, input enable, input left, in
 endmodule
 
 /* Displays player on output screen based on input screen*/
-module display_movement (input clock, input [511:0] in, input [3:0] player, output reg [511:0] out);
+module display_movement (input clock, input resetn, input [511:0] in, input [3:0] player, output reg [511:0] out, output reg collision);
 	always @(posedge clock) begin
 		out <= in;
 		//Draws Ship
@@ -186,16 +186,33 @@ module display_movement (input clock, input [511:0] in, input [3:0] player, outp
 		out[32*player-1] <= 1'b1;
 		out[32*player+30] <= 1'b1;
 		out[32*player+63] <= 1'b1;
+
+		if (!resetn)
+			collision <= 1'b0;
+		if (collision == 1'b0)
+		begin
+			if (out[32*player+31] == 1'b1)
+				collision <= 1'b1;
+			if (out[32*player-1] == 1'b1)
+				collision <= 1'b1;
+			if (out[32*player+30] == 1'b1)
+				collision <= 1'b1;
+			if (out[32*player+63] == 1'b1)
+				collision <= 1'b1;
+		end
 		//Draws whitespace around ship
+		/*
 		out[32*player-2] <= 1'b0;
 		out[32*player+62] <= 1'b0;
 		if (player > 4'b0001)
 			out[32*player-33] <= 1'b0;
 		if (player < 4'b1110)
 			out[32*player+95] <= 1'b0;
+			*/
+
 	end
 endmodule
-
+/*
 module collision_detect (input clock, input [511:0] in, input [3:0] player, output reg collision);
 	always @(posedge clock) begin 
 		if (!resetn)
@@ -212,7 +229,7 @@ module collision_detect (input clock, input [511:0] in, input [3:0] player, outp
 				collision <= 1'b1;
 		end
 	end
-endmodule
+endmodule */
 
 module score_tracker(input clock, input resetn, input enable, output reg [23:0] score);
 	always @(posedge clock) begin
@@ -367,6 +384,39 @@ module random(clock, resetn, enable, out_value);
 
 endmodule
 
+module rand(clock, resetn, enable, seed, out);
+	input clock, resetn, enable;
+	input [31:0] seed;
+	output out;
+	reg [31:0] mReg;
+	always @(posedge clock) begin
+		if(~resetn) begin
+			mReg <= seed;
+		end
+		else if(enable) begin
+			mReg <= {mReg[0], mReg[31:1]};
+		end
+	end
+	assign out = mReg[0];
+	
+endmodule
+
+module rand4(clock, resetn, enable, seed, out);
+	input clock, resetn, enable;
+	input [31:0] seed;
+	output [3:0] out;
+	
+	rand r0(clock, resetn, enable, seed + 32'hABCDEF12,out[0]);
+	rand r1(clock, resetn, enable, seed + 32'h00F8BA30,out[1]);
+	rand r2(clock, resetn, enable, seed + 32'h3743D849 ,out[2]);
+	rand r3(clock, resetn, enable, seed + 32'h21F99CEE ,out[3]);
+	
+	/*rand r0(clock, resetn, enable, 32'hABCDEF12 ,out[0]);
+	rand r1(clock, resetn, enable, 32'hF8B323AF ,out[1]);
+	rand r2(clock, resetn, enable, 32'hC0900ADE ,out[2]);
+	rand r3(clock, resetn, enable, 32'h0B313800 ,out[3]);*/
+endmodule
+
 /* Output a rectangle into 16x6 out_buffer*/
 module get_rectangle(clock, x, y, w, h, out_buffer);
 	input clock;
@@ -422,13 +472,28 @@ module spawner(clock, enable, resetn, /*delay,*/ out_buffer, set_buffer);
 	reg [7:0] counter;
 	
 	wire [255:0] w_out_buffer;
-   get_rectangle gs(clock, 4'b0001, 4'b0110, 4'b0011, 4'b0110, w_out_buffer);
+   
+	wire [3:0] w_rand_x;
+	wire [3:0] w_rand_w;
+	wire [3:0] w_rand_h;
 	
-	wire [4:0] w_random;
-	random rand(clock, resetn, enable, w_random);
+	/*
+	lfsr4 l0(clock, resetn, enable, 16'b0010001111110101, w_rand_x);
+	lfsr4 lw(clock, resetn, enable, 16'b0010000001110101, w_rand_w);
+	lfsr4 lh(clock, resetn, enable, 16'b0011100000010101, w_rand_h);*/
+	rand4 r0(clock, resetn, enable, 32'hABCDEF12, w_rand_x);
+	rand4 r1(clock, resetn, enable, 32'h00F8BA30, w_rand_w);
+	rand4 r2(clock, resetn, enable, 32'h3743D849 ,w_rand_h);
 	
-	//get_circle gs(clock, 4'b0100, 4'b0110, 4'b0011, w_out_buffer);
-	//get_circle gs(clock, w_random[3:0], 4'b0110, 4'b0011, w_out_buffer);
+	wire [255:0] w_rectangle;
+	get_rectangle gr(clock, w_rand_x, 4'b0000, w_rand_w, w_rand_h, w_rectangle);
+	
+	wire [255:0] w_circle;
+	get_circle gc(clock,  w_rand_x, 4'b0100, {1'b0, w_rand_w[2:0]}, w_circle);
+	
+	wire w_choose_shape;
+	//lfsr choose(clock, resetn, enable, 16'b0011100000010101, w_choose_shape);
+	rand r3(clock, resetn, enable, 32'hABCDEF12, w_choose_shape);
 	
 	always @ (posedge clock) begin
 		if(~resetn) begin 
@@ -437,13 +502,22 @@ module spawner(clock, enable, resetn, /*delay,*/ out_buffer, set_buffer);
 			set_buffer <= 1'b0;
 		end
 		else if(enable) begin
-			
-		
 			counter <= counter + 8'b00000001;
+			/*if(w_choose_shape)begin
+				w_out_buffer <= w_rectangle;
+			end
+			else begin 
+				w_out_buffer <= w_circle;
+			end*/
 			if(counter >= 8'b00010000)begin
 				counter <= 8'b00000000;
-				//out_buffer <= 256'hFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
-				out_buffer <= w_out_buffer;
+				//out_buffer <= w_out_buffer;
+				if(w_choose_shape)begin
+					out_buffer <= w_rectangle;
+				end
+				else begin 
+					out_buffer <= w_circle;
+				end
 				set_buffer <= 1'b1;
 			end
 			else begin
@@ -499,7 +573,7 @@ module game_state(display, display_and_buffer, add_buffer, clock, resetn, enable
 	 
 endmodule
 
-module seven_segment(out, in);
+module seven_segment(in, out);
     input [3:0] in;
     output [6:0] out;
 
