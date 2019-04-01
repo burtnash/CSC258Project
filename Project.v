@@ -9,6 +9,12 @@ module phase1
 		// Your inputs and outputs here
         KEY,
         SW,
+				HEX0,
+				HEX1,
+				HEX2,
+				HEX3,
+				HEX4,
+				HEX5,
 		// The ports below are for the VGA output.  Do not change.
 		VGA_CLK,   						//	VGA Clock
 		VGA_HS,							//	VGA H_SYNC
@@ -23,6 +29,12 @@ module phase1
 	input			CLOCK_50;				//	50 MHz
 	input   [9:0]   SW;
 	input   [3:0]   KEY;
+	input [6:0] HEX0;
+	input [6:0] HEX1;
+	input [6:0] HEX2;
+	input [6:0] HEX3;
+	input [6:0] HEX4;
+	input [6:0] HEX5;
 
 	// Declare your inputs and outputs here
 	// Do not change the following outputs
@@ -40,13 +52,14 @@ module phase1
 	wire enable;
 	assign enable = SW[0];
 	wire left, right;
-	assign left = ~KEY[1];
-	assign right = ~KEY[2];
+	assign left = ~KEY[2];
+	assign right = ~KEY[1];
 	
 	// Create the colour, x, and y wires that are inputs to the controller.
 	wire [2:0] colour;
-	wire [5:0] x;
-	wire [6:0] y;
+	wire [4:0] x;
+	wire [5:0] y;
+	wire [23:0] score;
 
 	// Create an Instance of a VGA controller - there can be only one!
 	// Define the number of colours as well as the initial background
@@ -72,18 +85,25 @@ module phase1
 		defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
 		defparam VGA.BACKGROUND_IMAGE = "black.mif";
 			
-	datapath d0(resetn, CLOCK_50, enable, left, right, x, y, colour);
+	datapath d0(resetn, CLOCK_50, enable, left, right, x, y, colour, score);
+	seven_segment ss0(score[3:0], HEX0[6:0]);
+	seven_segment ss0(score[7:4], HEX1[6:0]);
+	seven_segment ss0(score[11:8], HEX2[6:0]);
+	seven_segment ss0(score[15:12], HEX3[6:0]);
+	seven_segment ss0(score[19:16], HEX4[6:0]);
+	seven_segment ss0(score[23:20], HEX5[6:0]);
     
 endmodule
 
-module datapath(resetn, clock, enable, left, right, x, y, colour);
+module datapath(resetin, clock, enable, left, right, x, y, colour, score);
 	input resetn;
 	input clock;
 	input enable;
 	input left, right;
-	output [5:0] x;
-	output [6:0] y;
+	output [4:0] x;
+	output [5:0] y;
 	output reg [2:0] colour;
+	output [23:0] score;
 	
 	reg counter_x_enable;
 	wire [3:0] player_location;
@@ -94,12 +114,14 @@ module datapath(resetn, clock, enable, left, right, x, y, colour);
 	wire [511:0] player_display;
 	wire [255:0] w_spawner;
 	wire w_set_buffer;
-	wire [4067:0] display;
+	wire [2047:0] display;
+	wire resetn;
+	wire collision;
 
 	always @(posedge clock)
 	begin
 		counter_x_enable <= (y == 6'b111111) ? 1'b1 : 1'b0;
-		colour <= (display[96 * x + y] == 1'b1) ? 3'b000 : 3'b001;
+		colour <= (display[64 * x + y] == 1'b1) ? 3'b000 : 3'b001;
 	end
 
 	frame_counter c0(frame_out, clock, resetn, enable);
@@ -108,13 +130,18 @@ module datapath(resetn, clock, enable, left, right, x, y, colour);
 	counter_y cy(clock, resetn, enable, y);
 	counter_x cx(clock, resetn, counter_x_enable, x);
 	
-	convert512to4068 converter(player_display, display);
+	convert512to2048 converter(player_display, display);
 
-	module movement_control(clock, resetn, enable, left, right, player_location);
+	module movement_control(delay_out, resetn, enable, left, right, player_location);
 	module display_movement(clock, w_display, player_location, player_display);
+
+	collision_detect cd(clock, w_display, player_location, collision);
+	score_tracker st(clock, resetn, delay_out, score);
 
 	spawner sp(delay_out, enable, resetn, w_spawner, w_set_buffer);
 	game_state gs(w_display, display_and_buffer, w_spawner, delay_out, resetn, enable, w_set_buffer); 
+
+	assign resetn = collision ? 1'b0 : resetin;
 
 endmodule
 
@@ -130,25 +157,6 @@ module convert512to2048(input [511:0] in, output reg [2047:0] out);
 			end
 		end
 	end
-endmodule
-
-module convert512to4068(input [511:0] in, output reg [4067:0] out);
-	integer x, y;
-	always @(*) begin
-		for (x=0; x<16; x=x+1) begin
-			for(y = 0; y < 32; y = y +1) begin
-				out[3*(96*x+y)] <= in[32*x+y];
-				out[3*(96*x+y)+1] <= in[32*x+y];
-				out[3*(96*x+y)+2] <= in[32*x+y];
-				out[3*(96*x+y)+96] <= in[32*x+y];
-				out[3*(96*x+y)+97] <= in[32*x+y];
-				out[3*(96*x+y)+98] <= in[32*x+y];
-				out[3*(96*x+y)+192] <= in[32*x+y];
-				out[3*(96*x+y)+193] <= in[32*x+y];
-				out[3*(96*x+y)+194] <= in[32*x+y];			
-			end
-		end
-	end	
 endmodule
 
 /* Translates left and right into register storing position 1-14 */
@@ -189,7 +197,9 @@ module display_movement (input clock, input [511:0] in, input [3:0] player, outp
 endmodule
 
 module collision_detect (input clock, input [511:0] in, input [3:0] player, output reg collision);
-	always @(posedge clock)
+	always @(posedge clock) begin 
+		if (!resetn)
+			collision <= 1'b0;
 		if (collision == 1'b0)
 		begin
 			if (out[32*player+31] == 1'b1)
@@ -201,6 +211,16 @@ module collision_detect (input clock, input [511:0] in, input [3:0] player, outp
 			if (out[32*player+63] == 1'b1)
 				collision <= 1'b1;
 		end
+	end
+endmodule
+
+module score_tracker(input clock, input resetn, input enable, output reg [23:0] score);
+	always @(posedge clock) begin
+		if (!resetn)
+			score <= 24'h0;
+		else if (enable)
+			score <= score + 1'b1;
+	end
 endmodule
 
 module frame_counter(output out, input clk, input resetn, input enable);
@@ -245,13 +265,13 @@ endmodule
 module counter_x
 	(
 		input clock, resetn, enable,
-		output reg [5:0] x
+		output reg [4:0] x
 	);
 
 	always @(posedge clock)
 		begin
 			if (!resetn)
-				x <= 6'b000000;
+				x <= 5'b00000;
 			else if (enable) 
 				x <= x + 1'b1;
 		end
@@ -260,13 +280,13 @@ endmodule
 module counter_y
 	(
 		input clock, resetn, enable,
-		output reg [6:0] y
+		output reg [5:0] y
 	);
 
 	always @(posedge clock)
 		begin
 			if (!resetn)
-				y <= 7'b0000000;
+				y <= 6'b000000;
 			else if (enable) 
 				y <= y + 1'b1;
 		end
@@ -479,5 +499,17 @@ module game_state(display, display_and_buffer, add_buffer, clock, resetn, enable
 	 
 endmodule
 
+module seven_segment(out, in);
+    input [3:0] in;
+    output [6:0] out;
 
+    assign out[0] = ~in[3] & ~in[2] & ~in[1] & in[0] | ~in[3] & in[2] & ~in[1] & ~in[0] | in[3] & in[2] & ~in[1] & in[0] | in[3] & ~in[2] & in[1] & in[0];
+	assign out[1] = ~in[3] & in[2] & ~in[1] & in[0] | in[3] & in[1] & in[0] | in[3] & in[2] & ~in[0] | in[2] & in[1] & ~in[0];
+	assign out[2] = ~in[3] & ~in[2] & in[1] & ~in[0] | in[3] & in[2] & in[1] | in[3] & in[2] & ~in[0];
+	assign out[3] = ~in[3] & ~in[2] & ~in[1] & in[0] | ~in[3] & in[2] & ~in[1] & ~in[0] | in[2] & in[1] & in[0] | in[3] & ~in[2] & ~in[1] & in[0] | in[3] & ~in[2] & in[1] & ~in[0];
+	assign out[4] = ~in[3] & in[0] | ~in[3] & in[2] & ~in[1] | ~in[2] & ~in[1] & in[0];
+	assign out[5] = ~in[3] & ~in[2] & in[1] | ~in[3] & ~in[2] & in[0] | ~in[3] & in[1] & in[0] | in[3] & in[2] & ~in[1] & in[0];
+	assign out[6] = ~in[3] & ~in[2] & ~in[1] | ~in[3] & in[2] & in[1] & in[0] | in[3] & in[2] & ~in[1] & ~in[0];
+	 
+endmodule
 
